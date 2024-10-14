@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eat the Star</title>
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background-color: #000;
+    }
+    canvas {
+      background-color: #111;
+      border: 2px solid #fff;
+    }
+    .instructions {
+      position: absolute;
+      color: white;
+      top: 10px;
+      left: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="instructions">Press Space to Start, Use WASD to move</div>
+  <canvas id="gameCanvas" width="600" height="600"></canvas>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const boxSize = 20;
+    const rows = canvas.height / boxSize;
+    const cols = canvas.width / boxSize;
+
+    let snake;
+    let food;
+    let enemy;
+    let obstacles = [];
+    let direction = null; // Initial direction is null
+    let gameInterval;
+    let enemyInterval;
+    let isPlaying = false;
+    let score = 0;  // Initialize score
+    const numberOfObstacles = 100; // Reduced number of obstacles
+
+    // Initialize snake, food, enemy, and obstacles positions
+    function initGame() {
+      snake = [{ x: Math.floor(cols / 2), y: Math.floor(rows / 2) }];
+      food = generateRandomPosition();
+      enemy = generateRandomPosition();
+      obstacles = generateObstacles();
+      direction = null; // Reset direction
+      score = 0; // Reset score
+    }
+
+    // Generate a random position for food, enemy, or obstacles
+    function generateRandomPosition() {
+      return {
+        x: Math.floor(Math.random() * cols),
+        y: Math.floor(Math.random() * rows)
+      };
+    }
+
+    // Generate random obstacles, ensuring they do not overlap with the snake, food, or enemy
+    function generateObstacles() {
+      const obstaclePositions = new Set(); // Use Set to avoid duplicates
+      while (obstaclePositions.size < numberOfObstacles) {
+        const position = generateRandomPosition();
+        obstaclePositions.add(`${position.x},${position.y}`);
+      }
+      return [...obstaclePositions].map(pos => {
+        const [x, y] = pos.split(',').map(Number);
+        return { x, y }; // Make all obstacles impassable
+      });
+    }
+
+    // Draw a star shape for food
+    function drawStar(x, y, spikes, outerRadius, innerRadius) {
+      ctx.beginPath();
+      ctx.moveTo(x, y - outerRadius);
+      for (let i = 0; i < spikes; i++) {
+        ctx.lineTo(x + outerRadius * Math.cos((i * Math.PI) / spikes - Math.PI / 2), y + outerRadius * Math.sin((i * Math.PI) / spikes - Math.PI / 2));
+        ctx.lineTo(x + innerRadius * Math.cos(((i + 1) * Math.PI) / spikes - Math.PI / 2), y + innerRadius * Math.sin(((i + 1) * Math.PI) / spikes - Math.PI / 2));
+      }
+      ctx.lineTo(x, y - outerRadius);
+      ctx.closePath();
+      ctx.fillStyle = 'yellow';
+      ctx.fill();
+    }
+
+    // Draw the cute snake
+    function drawSnake() {
+      ctx.fillStyle = 'lightgreen';
+      ctx.beginPath();
+      const head = snake[0];
+      ctx.arc(head.x * boxSize + boxSize / 2, head.y * boxSize + boxSize / 2, boxSize / 2, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Draw eyes
+      ctx.fillStyle = 'black';
+      ctx.beginPath();
+      ctx.arc(head.x * boxSize + boxSize / 4, head.y * boxSize + boxSize / 4, 4, 0, Math.PI * 2); // Left eye
+      ctx.arc(head.x * boxSize + 3 * boxSize / 4, head.y * boxSize + boxSize / 4, 4, 0, Math.PI * 2); // Right eye
+      ctx.fill();
+      
+      // Draw smile
+      ctx.beginPath();
+      ctx.arc(head.x * boxSize + boxSize / 2, head.y * boxSize + boxSize / 4 + 5, 10, 0, Math.PI);
+      ctx.strokeStyle = 'black';
+      ctx.stroke();
+    }
+
+    // Draw the bomb enemy
+    function drawBomb() {
+      ctx.fillStyle = 'black';
+      const bomb = enemy;
+      ctx.beginPath();
+      ctx.arc(bomb.x * boxSize + boxSize / 2, bomb.y * boxSize + boxSize / 2, boxSize / 2, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Draw bomb wick
+      ctx.beginPath();
+      ctx.moveTo(bomb.x * boxSize + boxSize / 2, bomb.y * boxSize + boxSize / 2 - 10);
+      ctx.lineTo(bomb.x * boxSize + boxSize / 2, bomb.y * boxSize + boxSize / 2 - 20);
+      ctx.strokeStyle = 'red';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      
+      // Draw bomb fuse flame
+      ctx.beginPath();
+      ctx.moveTo(bomb.x * boxSize + boxSize / 2, bomb.y * boxSize + boxSize / 2 - 20);
+      ctx.lineTo(bomb.x * boxSize + boxSize / 2 - 5, bomb.y * boxSize + boxSize / 2 - 25);
+      ctx.lineTo(bomb.x * boxSize + boxSize / 2 + 5, bomb.y * boxSize + boxSize / 2 - 25);
+      ctx.fillStyle = 'orange';
+      ctx.fill();
+    }
+
+    // Draw the food, obstacles, and score on the canvas
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw the snake
+      drawSnake();
+
+      // Draw food (now star-shaped)
+      drawStar(food.x * boxSize + boxSize / 2, food.y * boxSize + boxSize / 2, 5, boxSize / 2, boxSize / 4);
+
+      // Draw the bomb enemy
+      drawBomb();
+
+      // Draw obstacles
+      ctx.fillStyle = 'green';
+      obstacles.forEach(obstacle => {
+        ctx.fillRect(obstacle.x * boxSize, obstacle.y * boxSize, boxSize, boxSize);
+      });
+
+      // Draw score in red at the top right
+      ctx.fillStyle = 'red';
+      ctx.font = '20px Arial';
+      ctx.textAlign = 'right';
+      ctx.fillText(`Score: ${score}`, canvas.width - 20, 30);
+    }
+
+    // Move the snake based on the current direction
+    function moveSnake() {
+      if (!direction) return; // If no direction is set, don't move
+
+      const head = { ...snake[0] };
+
+      // Change head position based on the direction
+      if (direction === 'up') head.y -= 1;
+      if (direction === 'down') head.y += 1;
+      if (direction === 'left') head.x -= 1;
+      if (direction === 'right') head.x += 1;
+
+      // Wrap around when hitting walls
+      if (head.x < 0) head.x = cols - 1;
+      if (head.x >= cols) head.x = 0;
+      if (head.y < 0) head.y = rows - 1;
+      if (head.y >= rows) head.y = 0;
+
+      // Check if snake collides with any obstacles
+      if (obstacles.some(obstacle => obstacle.x === head.x && obstacle.y === head.y)) {
+        return; // Don't move the snake if colliding with an obstacle
+      }
+
+      snake[0] = head; // Move the snake
+
+      // Check if snake eats food
+      if (head.x === food.x && head.y === food.y) {
+        // Relocate the food, but the snake remains 1 block long
+        food = generateRandomPosition();
+        score += 10; // Increase score by 10
+      }
+
+      // Check if snake collides with the bomb or brushes past it
+      if (isAdjacent(head, enemy)) {
+        gameOver();
+      }
+    }
+
+    // Move the enemy toward the snake, avoiding obstacles
+    function moveEnemy() {
+      const head = snake[0];
+      let nextX = enemy.x;
+      let nextY = enemy.y;
+
+      if (enemy.x < head.x) nextX += 0.5; // Move right slowly
+      if (enemy.x > head.x) nextX -= 0.5; // Move left slowly
+      if (enemy.y < head.y) nextY += 0.5; // Move down slowly
+      if (enemy.y > head.y) nextY -= 0.5; // Move up slowly
+
+      // Check collision with obstacles before moving
+      if (!isCollidingWithObstacle(nextX, enemy.y)) {
+        enemy.x = nextX; // Move only if not colliding with an obstacle
+      }
+      if (!isCollidingWithObstacle(enemy.x, nextY)) {
+        enemy.y = nextY; // Move only if not colliding with an obstacle
+      }
+    }
+
+    // Check if a position collides with any obstacles
+    function isCollidingWithObstacle(x, y) {
+      return obstacles.some(obstacle => obstacle.x === Math.floor(x) && obstacle.y === Math.floor(y));
+    }
+
+    // Check if two positions are adjacent
+    function isAdjacent(pos1, pos2) {
+      return (
+        (Math.abs(pos1.x - pos2.x) === 1 && pos1.y === pos2.y) || // Horizontal adjacency
+        (Math.abs(pos1.y - pos2.y) === 1 && pos1.x === pos2.x)    // Vertical adjacency
+      );
+    }
+
+    // Handle user input (WASD keys)
+    window.addEventListener('keydown', e => {
+      if (e.key === 'w' && direction !== 'down') direction = 'up';
+      if (e.key === 's' && direction !== 'up') direction = 'down';
+      if (e.key === 'a' && direction !== 'right') direction = 'left';
+      if (e.key === 'd' && direction !== 'left') direction = 'right';
+
+      if (e.code === 'Space' && !isPlaying) {
+        alert("폭탄을 피해서 별을 먹으세요!"); // Display the pop-up message
+        isPlaying = true;
+        initGame();
+        
+        // Start game loop
+        gameInterval = setInterval(() => {
+          moveSnake();
+          draw();
+        }, 100);
+        
+        // Start enemy movement
+        enemyInterval = setInterval(() => {
+          moveEnemy();
+          draw();
+        }, 200); // Slower enemy movement
+      }
+    });
+
+    // Game over function
+    function gameOver() {
+      clearInterval(gameInterval);
+      clearInterval(enemyInterval);
+      alert("Game Over! Press Space to restart.");
+      isPlaying = false;
+    }
+
+    // Initialize and draw the game for the first time
+    initGame();
+    draw();
+  </script>
+</body>
+</html>
